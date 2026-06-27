@@ -14,14 +14,20 @@ type apiConfig struct {
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// injecting some code before serving original Handler
-		r.Header.Add("Cache-Control", "no-cache")
 		cfg.fileserverHits.Add(1)
 		next.ServeHTTP(w, r)
 	})
 }
 
-func (cfg *apiConfig) resetHits() {
+func (cfg *apiConfig) metrics(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	fmt.Fprintf(w, "Hits: %d\n", cfg.fileserverHits.Load())
+}
+
+func (cfg *apiConfig) reset(w http.ResponseWriter, r *http.Request) {
 	cfg.fileserverHits.Store(0)
+	w.WriteHeader(http.StatusOK)
 }
 
 func main() {
@@ -35,23 +41,15 @@ func main() {
 
 	// "index.html" is served from "/" by convention
 	root_handler := http.StripPrefix("/app", http.FileServer(root))
+
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(root_handler))
+	mux.HandleFunc("/metrics", apiCfg.metrics)
+	mux.HandleFunc("/reset", apiCfg.reset)
 
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
-		r.Header.Add("Content-Type", "text/plain; charset=utf-8")
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte("OK"))
-	})
-
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(fmt.Sprintf("Hits: %v\n", apiCfg.fileserverHits.Load())))
-	})
-
-	mux.HandleFunc("/reset", func(w http.ResponseWriter, r *http.Request) {
-		apiCfg.resetHits()
-		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(fmt.Sprintf("Reset hits: %v\n", apiCfg.fileserverHits.Load())))
+		w.Write([]byte("OK\n"))
 	})
 
 	fmt.Println("starting server on :8080")
