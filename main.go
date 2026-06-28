@@ -43,10 +43,10 @@ func main() {
 	root_handler := http.StripPrefix("/app", http.FileServer(root))
 
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(root_handler))
-	mux.HandleFunc("/metrics", apiCfg.metrics)
-	mux.HandleFunc("/reset", apiCfg.reset)
+	mux.HandleFunc("GET /metrics", apiCfg.metrics)
+	mux.HandleFunc("POST /reset", apiCfg.reset)
 
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK\n"))
