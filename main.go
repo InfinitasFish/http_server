@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync/atomic"
+	"encoding/json"
 	)
 
 type apiConfig struct {
@@ -20,7 +21,7 @@ func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 }
 
 func (cfg *apiConfig) metrics(w http.ResponseWriter, r *http.Request) {
-	metrics_html := fmt.Sprintf(`
+	metricsHtml := fmt.Sprintf(`
 <html>
   <body>
     <h1>Welcome, Chirpy Admin</h1>
@@ -30,12 +31,50 @@ func (cfg *apiConfig) metrics(w http.ResponseWriter, r *http.Request) {
 	`, cfg.fileserverHits.Load())
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	w.WriteHeader(http.StatusOK)
-	w.Write([]byte(metrics_html))
+	w.Write([]byte(metricsHtml))
 }
 
 func (cfg *apiConfig) reset(w http.ResponseWriter, r *http.Request) {
 	cfg.fileserverHits.Store(0)
 	w.WriteHeader(http.StatusOK)
+}
+
+func (cfg *apiConfig) validate(w http.ResponseWriter, r *http.Request) {
+	type chirpBody struct {
+		Body string `json:"body"`
+	}
+	type chirpResult struct {
+		Error string `json:"error"`
+		Valid bool `json:"valid"`
+	}
+
+	chirp := chirpBody{}
+	result := chirpResult{}
+
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(&chirp)
+	if err != nil {
+		result.Error = "Something went wrong"
+		result.Valid = false
+		data, _ := json.Marshal(result)
+	
+		w.WriteHeader(500)
+		w.Write(data)
+		return
+    }
+
+	if len(chirp.Body) > 140 {
+		w.WriteHeader(400)
+		result.Error = "Chirp is too long"
+		result.Valid = false
+	} else {
+		w.WriteHeader(200)
+		result.Error = "None"
+		result.Valid = true
+	}
+
+	data, _ := json.Marshal(result)
+	w.Write(data)
 }
 
 func main() {
@@ -53,6 +92,7 @@ func main() {
 	mux.Handle("/app/", apiCfg.middlewareMetricsInc(root_handler))
 	mux.HandleFunc("GET /admin/metrics", apiCfg.metrics)
 	mux.HandleFunc("POST /admin/reset", apiCfg.reset)
+	mux.HandleFunc("POST /api/validate_chirp", apiCfg.validate)
 
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
