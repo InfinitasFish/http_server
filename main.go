@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sync/atomic"
 	"encoding/json"
+	"strings"
 	)
 
 type apiConfig struct {
@@ -40,12 +41,16 @@ func (cfg *apiConfig) reset(w http.ResponseWriter, r *http.Request) {
 }
 
 func (cfg *apiConfig) validate(w http.ResponseWriter, r *http.Request) {
+	// some "profane" words for debug
+	profaneWords := []string{"kerfuffle", "sharbert", "fornax"}
+	
 	type chirpBody struct {
 		Body string `json:"body"`
 	}
 	type chirpResult struct {
 		Error string `json:"error"`
 		Valid bool `json:"valid"`
+		Clean string `json:"cleaned_body"`
 	}
 
 	chirp := chirpBody{}
@@ -56,12 +61,31 @@ func (cfg *apiConfig) validate(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		result.Error = "Something went wrong"
 		result.Valid = false
+		result.Clean = "None"
 		data, _ := json.Marshal(result)
 	
 		w.WriteHeader(500)
 		w.Write(data)
 		return
     }
+
+	// cleaning chirp text slowly O(n^2)
+	filteredWords := []string{}
+	for _, word := range strings.Split(chirp.Body, " ") {
+		addFlag := true
+		for _, pword := range profaneWords {
+			if strings.ToLower(word) == pword {
+				addFlag = false
+				break
+			}
+		}
+		if addFlag {
+			filteredWords = append(filteredWords, word)
+		} else {
+			filteredWords = append(filteredWords, "****")
+		}
+	}
+	chirp.Body = strings.Join(filteredWords, " ")
 
 	if len(chirp.Body) > 140 {
 		w.WriteHeader(400)
@@ -72,6 +96,7 @@ func (cfg *apiConfig) validate(w http.ResponseWriter, r *http.Request) {
 		result.Error = "None"
 		result.Valid = true
 	}
+	result.Clean = chirp.Body
 
 	data, _ := json.Marshal(result)
 	w.Write(data)
