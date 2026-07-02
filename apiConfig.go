@@ -4,11 +4,13 @@ import (
 	"fmt"
 	"net/http"
 	"sync/atomic"
+	"internal/database"
 	)
 
 type apiConfig struct {
 	// atomic is thread-safe type for multiple goroutines
 	fileserverHits atomic.Int32
+	dbQueries *database.Queries
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {

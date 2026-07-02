@@ -3,16 +3,31 @@ package main
 import (
 	"fmt"
 	"net/http"
+	"os"
+	"log"
+	"database/sql"
+	"internal/database"
+	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
 	)
 
 func main() {
+	err := godotenv.Load()
+	if err != nil {
+		log.Fatal("Error loading .env file", err)
+	}
+
 	root := http.Dir(".")
-	fmt.Println(root)
+	dbUrl := os.Getenv("DB_URL")
+	db, err := sql.Open("postgres", dbUrl)
+	if err != nil {
+		log.Fatal("Unable to use data source name", err)
+	}
 
 	// ServeMux is an HTTP request multiplexer. It matches the URL of each incoming request against a list 
 	// of registered patterns and calls the handler for the pattern that most closely matches the URL.
 	mux := http.NewServeMux()
-	apiCfg := &apiConfig{}
+	apiCfg := &apiConfig{dbQueries: database.New(db)}
 
 	// "index.html" is served from "/" by convention
 	root_handler := http.StripPrefix("/app", http.FileServer(root))
@@ -29,7 +44,7 @@ func main() {
 	})
 
 	fmt.Println("starting server on :8080")
-	err := http.ListenAndServe(":8080", mux)
+	err = http.ListenAndServe(":8080", mux)
 	fmt.Println(err)
 }
 
