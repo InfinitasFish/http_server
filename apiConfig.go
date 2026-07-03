@@ -5,12 +5,28 @@ import (
 	"net/http"
 	"sync/atomic"
 	"internal/database"
+	"encoding/json"
+	"time"
+	"log"
+	"github.com/google/uuid"
 	)
 
 type apiConfig struct {
 	// atomic is thread-safe type for multiple goroutines
 	fileserverHits atomic.Int32
 	dbQueries *database.Queries
+	platform string
+}
+
+type CreateUserBody struct {
+	Email string `json:"email"`
+}
+
+type ResponseUserBody struct {
+	ID string `json:"id"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	Email string `json:"email"`
 }
 
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
@@ -35,7 +51,56 @@ func (cfg *apiConfig) metrics(w http.ResponseWriter, r *http.Request) {
 	w.Write([]byte(metricsHtml))
 }
 
-func (cfg *apiConfig) reset(w http.ResponseWriter, r *http.Request) {
+func (cfg *apiConfig) resetMetrics(w http.ResponseWriter, r *http.Request) {
 	cfg.fileserverHits.Store(0)
 	w.WriteHeader(http.StatusOK)
+}
+
+func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) {
+	newUser := CreateUserBody{}
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(&newUser)
+	if err != nil {
+		// Print + os.Exit(1)
+		log.Fatal("Invalid json for creating a user", err)
+	}
+
+	userParams := database.CreateUserParams{
+		ID: uuid.New(),
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+		Email: newUser.Email,
+	}
+
+	user, err := cfg.dbQueries.CreateUser(r.Context(), userParams)
+	if err != nil {
+		log.Fatal("Error while creating user in db", err)
+	}
+	newUserResponse := ResponseUserBody{
+		ID: user.ID.String(),
+		CreatedAt: user.CreatedAt.String(),
+		UpdatedAt: user.UpdatedAt.String(),
+		Email: user.Email,
+	}
+	
+	data, _ := json.Marshal(newUserResponse)
+	w.WriteHeader(201)
+	// w.Write([]byte("HTTP 201 Created\n"))
+	w.Write(data)
+}
+
+func (cfg *apiConfig) resetAllUsers(w http.ResponseWriter, r *http.Request) {
+	if cfg.platform != "dev" {
+		w.WriteHeader(403)
+		w.Write([]byte("403 Forbidden\n"))
+		return
+	}
+	
+	err := cfg.dbQueries.ResetAllUsers(r.Context())
+	if err != nil {
+		log.Fatal("Error while deleting users", err)
+	}
+	
+	w.WriteHeader(200)
+	// w.Write([]byte("200 Deleted all users\n"))
 }
