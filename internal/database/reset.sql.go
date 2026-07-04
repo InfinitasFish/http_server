@@ -9,6 +9,15 @@ import (
 	"context"
 )
 
+const resetAllChirps = `-- name: ResetAllChirps :exec
+DELETE FROM chirps
+`
+
+func (q *Queries) ResetAllChirps(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, resetAllChirps)
+	return err
+}
+
 const resetAllUsers = `-- name: ResetAllUsers :exec
 DELETE FROM users
 `

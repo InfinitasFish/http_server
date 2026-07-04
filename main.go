@@ -37,15 +37,15 @@ func main() {
 	mux.HandleFunc("GET /admin/metrics", apiCfg.metrics)
 	mux.HandleFunc("POST /admin/reset", apiCfg.resetAllUsers)
 	mux.HandleFunc("POST /admin/reset_metrics", apiCfg.resetMetrics)
-	mux.HandleFunc("POST /api/users", apiCfg.createUserHandler)
 
+	mux.HandleFunc("POST /api/users", apiCfg.createUserHandler)
+	mux.HandleFunc("POST /api/chirps", apiCfg.createChirpHandler)
+	// mux.HandleFunc("POST /api/validate_chirp", chirpValidateHandler)
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK\n"))
 	})
-
-	mux.HandleFunc("POST /api/validate_chirp", chirpValidater)
 
 	fmt.Println("starting server on :8080")
 	err = http.ListenAndServe(":8080", mux)

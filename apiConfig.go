@@ -29,6 +29,19 @@ type ResponseUserBody struct {
 	Email string `json:"email"`
 }
 
+type CreateChirpBody struct {
+	Body string `json:"body"`
+	UserID string `json:"user_id"`
+}
+
+type ResponseChirpBody struct {
+	ID string `json:"id"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
+	Body string `json:"body"`
+	UserID string `json:"user_id"`
+}
+
 func (cfg *apiConfig) middlewareMetricsInc(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// injecting some code before serving original Handler
@@ -103,4 +116,52 @@ func (cfg *apiConfig) resetAllUsers(w http.ResponseWriter, r *http.Request) {
 	
 	w.WriteHeader(200)
 	// w.Write([]byte("200 Deleted all users\n"))
+}
+
+func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request) {
+	newChirp := CreateChirpBody{}
+	decoder := json.NewDecoder(r.Body)
+	err := decoder.Decode(&newChirp)
+	if err != nil {
+		log.Fatal("Invalid json for creating a chirp", err)
+	}
+
+	// validate chirp
+	filteredChirp := filterChirp(newChirp.Body)
+	isValid := validateChirp(filteredChirp)
+	if !isValid {
+		w.WriteHeader(400)
+		w.Write([]byte("Invalid chirp body"))
+		return
+	}
+	
+	// add chirp to db
+	userID, err := uuid.Parse(newChirp.UserID)
+	if err != nil {
+		log.Fatalf("failed to parse UUID %q: %v", newChirp.UserID, err)
+	}
+	chirpParams := database.CreateChirpParams{
+		ID: uuid.New(), 
+		CreatedAt: time.Now(), 
+		UpdatedAt: time.Now(), 
+		Body: filteredChirp,
+		UserID: userID,
+	}
+
+	chirp, err := cfg.dbQueries.CreateChirp(r.Context(), chirpParams)
+	if err != nil {
+		log.Fatal("Error while adding chirp to db", err)
+	}
+
+	chirpResponse := ResponseChirpBody{
+		ID: chirp.ID.String(),
+		CreatedAt: chirp.CreatedAt.String(),
+		UpdatedAt: chirp.UpdatedAt.String(),
+		Body: chirp.Body,
+		UserID: chirp.UserID.String(),
+	}
+	data, _ := json.Marshal(chirpResponse)
+
+	w.WriteHeader(201)
+	w.Write([]byte(data))
 }

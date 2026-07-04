@@ -3,6 +3,7 @@ module http_server
 go 1.25.5
 
 require internal/database v1.0.0
+
 replace internal/database => ./internal/database
 
 require (

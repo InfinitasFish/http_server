@@ -16,8 +16,7 @@ type chirpResult struct {
 	Clean string `json:"cleaned_body"`
 }
 
-func chirpValidater(w http.ResponseWriter, r *http.Request) {
-
+func chirpValidateHandler(w http.ResponseWriter, r *http.Request) {
 	chirp := chirpBody{}
 	result := chirpResult{}
 
@@ -36,31 +35,45 @@ func chirpValidater(w http.ResponseWriter, r *http.Request) {
 
 	// cleaning chirp text slowly O(n)
 	// some "profane" words for debug, map[string] for fast checking
+	chirp.Body = filterChirp(chirp.Body)
+	isValid := validateChirp(chirp.Body)
+	if isValid {
+		w.WriteHeader(200)
+		result.Error = "None"
+		result.Valid = true
+	} else {
+		w.WriteHeader(400)
+		result.Error = "Chirp is too long"
+		result.Valid = false
+	}
+
+	data, _ := json.Marshal(result)
+	w.Write(data)
+}
+
+func filterChirp(chirpBody string) string {
 	profaneWords := map[string]struct{}{
 		"kerfuffle": {},
 		"sharbert":  {},
 		"fornax":    {},
 	}
+
 	filteredWords := []string{}
-	for _, word := range strings.Split(chirp.Body, " ") {
+	for _, word := range strings.Split(chirpBody, " ") {
 		if _, found := profaneWords[strings.ToLower(word)]; found {
 			word = "****"
 		}
 		filteredWords = append(filteredWords, word)
 	}
-	chirp.Body = strings.Join(filteredWords, " ")
+	chirpBody = strings.Join(filteredWords, " ")
 
-	if len(chirp.Body) > 140 {
-		w.WriteHeader(400)
-		result.Error = "Chirp is too long"
-		result.Valid = false
+	return chirpBody
+}
+
+func validateChirp(chirpBody string) bool {
+	if len(chirpBody) > 140 {
+		return false
 	} else {
-		w.WriteHeader(200)
-		result.Error = "None"
-		result.Valid = true
+		return true
 	}
-	result.Clean = chirp.Body
-
-	data, _ := json.Marshal(result)
-	w.Write(data)
 }
