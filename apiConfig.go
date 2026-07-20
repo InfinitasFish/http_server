@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"net/http"
 	"sync/atomic"
-	"internal/database"
 	"encoding/json"
 	"time"
 	"log"
+	"internal/database"
+	"internal/auth"
 	"github.com/google/uuid"
 	)
 
@@ -20,6 +21,12 @@ type apiConfig struct {
 
 type CreateUserBody struct {
 	Email string `json:"email"`
+	Password string `json:"password"`
+}
+
+type LoginUserBody struct {
+	Email string `json:"email"`
+	Password string `json:"password"`
 }
 
 type ResponseUserBody struct {
@@ -75,7 +82,17 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) 
 	err := decoder.Decode(&newUser)
 	if err != nil {
 		// Print + os.Exit(1)
-		log.Fatal("Invalid json for creating a user", err)
+		w.WriteHeader(404)
+		log.Println("Invalid json for creating a user", err)
+		return
+	}
+
+	// hash password before saving to database
+	hashedPassword, err := auth.HashPassword(newUser.Password)
+	if err != nil {
+		w.WriteHeader(404)
+		log.Println("Error hashing user's password", err)
+		return
 	}
 
 	userParams := database.CreateUserParams{
@@ -83,11 +100,14 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) 
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 		Email: newUser.Email,
+		HashedPassword: hashedPassword,
 	}
 
 	user, err := cfg.dbQueries.CreateUser(r.Context(), userParams)
 	if err != nil {
-		log.Fatal("Error while creating user in db", err)
+		w.WriteHeader(404)
+		log.Println("Error while creating user in db", err)
+		return
 	}
 	newUserResponse := ResponseUserBody{
 		ID: user.ID.String(),
@@ -98,7 +118,47 @@ func (cfg *apiConfig) createUserHandler(w http.ResponseWriter, r *http.Request) 
 	
 	data, _ := json.Marshal(newUserResponse)
 	w.WriteHeader(201)
-	// w.Write([]byte("HTTP 201 Created\n"))
+	w.Write(data)
+}
+
+func (cfg *apiConfig) loginUserHandler(w http.ResponseWriter, r *http.Request) {
+	// get presumably existing user email and password
+	userLoginBody := LoginUserBody{}
+	decoder := json.NewDecoder(r.Body)
+
+	err := decoder.Decode(&userLoginBody)
+	if err != nil {
+		w.WriteHeader(404)
+		log.Println("Invalid json for a user to login", err)
+		return
+	}
+
+	// find this user in db
+	user, err := cfg.dbQueries.FindUser(r.Context(), userLoginBody.Email)
+	if err != nil {
+		w.WriteHeader(404)
+		log.Println("User with this email isn't found", err)
+		return
+	}
+
+	// check if given password compares to one in database
+	match, err := auth.CheckPasswordHash(userLoginBody.Password, user.HashedPassword)
+	if match != true {
+		w.WriteHeader(401)
+		log.Println("Wrong password for this user", err)
+		return
+	}
+
+	newUserResponse := ResponseUserBody{
+		ID: user.ID.String(),
+		CreatedAt: user.CreatedAt.String(),
+		UpdatedAt: user.UpdatedAt.String(),
+		Email: user.Email,
+	}
+	log.Println("Successful login!")
+
+	data, _ := json.Marshal(newUserResponse)
+	w.WriteHeader(200)
 	w.Write(data)
 }
 
@@ -111,11 +171,12 @@ func (cfg *apiConfig) resetAllUsers(w http.ResponseWriter, r *http.Request) {
 	
 	err := cfg.dbQueries.ResetAllUsers(r.Context())
 	if err != nil {
-		log.Fatal("Error while deleting users", err)
+		w.WriteHeader(404)
+		log.Println("Error while deleting users", err)
+		return
 	}
 	
 	w.WriteHeader(200)
-	// w.Write([]byte("200 Deleted all users\n"))
 }
 
 func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request) {
@@ -123,7 +184,9 @@ func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request)
 	decoder := json.NewDecoder(r.Body)
 	err := decoder.Decode(&newChirp)
 	if err != nil {
-		log.Fatal("Invalid json for creating a chirp", err)
+		w.WriteHeader(404)
+		log.Println("Invalid json for creating a chirp", err)
+		return
 	}
 
 	// validate chirp
@@ -138,7 +201,7 @@ func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request)
 	// add chirp to db
 	userID, err := uuid.Parse(newChirp.UserID)
 	if err != nil {
-		log.Fatalf("failed to parse UUID %q: %v", newChirp.UserID, err)
+		log.Printf("failed to parse UUID %q: %v", newChirp.UserID, err)
 	}
 	chirpParams := database.CreateChirpParams{
 		ID: uuid.New(), 
@@ -150,7 +213,9 @@ func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request)
 
 	chirp, err := cfg.dbQueries.CreateChirp(r.Context(), chirpParams)
 	if err != nil {
-		log.Fatal("Error while adding chirp to db", err)
+		w.WriteHeader(404)
+		log.Println("Error while adding chirp to db", err)
+		return
 	}
 
 	chirpResponse := ResponseChirpBody{
@@ -163,5 +228,65 @@ func (cfg *apiConfig) createChirpHandler(w http.ResponseWriter, r *http.Request)
 	data, _ := json.Marshal(chirpResponse)
 
 	w.WriteHeader(201)
+	w.Write([]byte(data))
+}
+
+func (cfg *apiConfig) listChirpsHandler(w http.ResponseWriter, r *http.Request) {
+	chirps, err := cfg.dbQueries.GetAllChrips(r.Context())
+	if err != nil {
+		w.WriteHeader(404)
+		log.Println("Error retrieving chirps from database", err)
+		return
+	}
+	
+	var chirpsResponse []ResponseChirpBody
+	for _, chirp := range chirps {
+		chirpResponse := ResponseChirpBody{
+			ID: chirp.ID.String(),
+			CreatedAt: chirp.CreatedAt.String(),
+			UpdatedAt: chirp.UpdatedAt.String(),
+			Body: chirp.Body,
+			UserID: chirp.UserID.String(),
+		}
+		chirpsResponse = append(chirpsResponse, chirpResponse)
+	}
+
+	data, err := json.Marshal(chirpsResponse)
+	if err != nil {
+		w.WriteHeader(404)
+		log.Println("Error encoding chirps", err)
+		return
+	}
+
+	w.WriteHeader(200)
+	w.Write([]byte(data))
+}
+
+func (cfg *apiConfig) getChirpByID(w http.ResponseWriter, r *http.Request) {
+	chirpID, err := uuid.Parse(r.PathValue("chirpID"))
+	if err != nil {
+		w.WriteHeader(404)
+		log.Println("Invalid UUID while retrieving chirp", err)
+		return
+	}
+
+	fmt.Println(chirpID)
+	chirp, err := cfg.dbQueries.GetChirpByID(r.Context(), chirpID)
+	if err != nil {
+		w.WriteHeader(404)
+		log.Println("Error while retrieving chirp by ID", err)
+		return
+	}
+
+	chirpResponse := ResponseChirpBody{
+		ID: chirp.ID.String(),
+		CreatedAt: chirp.CreatedAt.String(),
+		UpdatedAt: chirp.UpdatedAt.String(),
+		Body: chirp.Body,
+		UserID: chirp.UserID.String(),
+	}
+
+	data, _ := json.Marshal(chirpResponse)
+	w.WriteHeader(200)
 	w.Write([]byte(data))
 }

@@ -1,4 +1,9 @@
 -- name: CreateUser :one
-INSERT INTO users (id, created_at, updated_at, email)
-VALUES ($1, $2, $3, $4)
+INSERT INTO users (id, created_at, updated_at, email, hashed_password)
+VALUES ($1, $2, $3, $4, $5)
 RETURNING *;
+
+-- name: FindUser :one
+SELECT * FROM users
+WHERE email = $1
+LIMIT 1;

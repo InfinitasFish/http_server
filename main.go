@@ -9,7 +9,7 @@ import (
 	"internal/database"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
-	)
+)
 
 func main() {
 	err := godotenv.Load()
@@ -39,8 +39,10 @@ func main() {
 	mux.HandleFunc("POST /admin/reset_metrics", apiCfg.resetMetrics)
 
 	mux.HandleFunc("POST /api/users", apiCfg.createUserHandler)
+	mux.HandleFunc("POST /api/login", apiCfg.loginUserHandler)
 	mux.HandleFunc("POST /api/chirps", apiCfg.createChirpHandler)
-	// mux.HandleFunc("POST /api/validate_chirp", chirpValidateHandler)
+	mux.HandleFunc("GET /api/chirps", apiCfg.listChirpsHandler)
+	mux.HandleFunc("GET /api/chirps/{chirpID}", apiCfg.getChirpByID)
 	mux.HandleFunc("GET /api/healthz", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.WriteHeader(http.StatusOK)
